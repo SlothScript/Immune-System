@@ -1,0 +1,10 @@
+startings           endings
+=========           =======
+none                none
+absorb              food
+repair              membrane
+expell              waste
+remember            DNA[x to y]
+generate            RDNA[x to y]
+do                  internally
+                    externally
