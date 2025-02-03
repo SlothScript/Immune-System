@@ -4,6 +4,7 @@ import sys
 import random
 
 tenary = lambda a, b, c: b if a else c
+tick = 0
 cell_size = 20
 half_size = cell_size / 2
 damping = 0.9  # Reduces jitter post-collision
@@ -48,8 +49,6 @@ geneColors = [(40, 40, 40), (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)
 screen = pygame.display.set_mode((800, 600))
 pygame.display.set_caption("Cell Simulation - Natch")
 
-cellArrangement = generateMergerSponge(27)  # Smaller grid for better performance
-
 def is_visible_on_screen(x, y, width, height, screen_width, screen_height):
     return not (x > screen_width or x + width < 0 or y > screen_height or y + height < 0)
 
@@ -62,6 +61,8 @@ class Cell:
         self.genes = ['0;0', '0;0', '0;0', '0;0', '0;0', '0;0', '0;0', '0;0']
         self._cache = {}  # Cache for polygon points
         self.doIn = True
+        self.onGeneNumber = 0
+        self.geneBrightness = 0
 
     def _calculate_gene_points(self, pos_x, pos_y, gene_size, angle):
         cache_key = (pos_x, pos_y, gene_size, angle)
@@ -102,6 +103,42 @@ class Cell:
                                     scaled_size + 2, scaled_size + 2)
         pygame.draw.rect(screen, (245, 222, 179), membrane_rect, int(membrane_width))
         
+        # Draw inside/outside indicator (doIn)
+        if self.doIn:
+            pygame.draw.polygon(screen, (127,127,127), ((center_x - scaled_size*0.2 + scaled_size//1.7, center_y - scaled_size*0.2 + scaled_size//1.7), (center_x - scaled_size*0.45 + scaled_size//1.7, center_y - scaled_size*0.2 + scaled_size//1.7), (center_x - scaled_size*0.2 + scaled_size//1.7, center_y - scaled_size*0.45 + scaled_size//1.7)))
+        else:
+            pygame.draw.polygon(screen, (220,220,220), ((center_x - scaled_size*0.2 + scaled_size//1.7, center_y - scaled_size*0.2 + scaled_size//1.7), (center_x - scaled_size*0.45 + scaled_size//1.7, center_y - scaled_size*0.2 + scaled_size//1.7), (center_x - scaled_size*0.2 + scaled_size//1.7, center_y - scaled_size*0.45 + scaled_size//1.7)))
+        
+        pygame.draw.circle(screen, (255, 255, 255), (center_x, center_y), scaled_size // 6, math.floor(scaled_size // 30))
+        
+        # Draw selector
+        if len(self.genes) > 0:
+            gene_radius = 6 * zoom
+            gene_size = min(6 * zoom, 24 * zoom / len(self.genes))
+            angle = math.pi / 2 + (2 * math.pi * tick) / len(self.genes)
+
+            # Calculate start point (from circle)
+            start_x = center_x + (scaled_size // 6) * math.cos(angle)
+            start_y = center_y + (scaled_size // 6) * math.sin(angle)
+
+            # Calculate end point (just past the gene)
+            end_x = center_x + (gene_radius + gene_size/2) * math.cos(angle)
+            end_y = center_y + (gene_radius + gene_size/2) * math.sin(angle)
+
+            # Calculate trapezoid points with consistent width
+            width = gene_size * 0.3
+            perp_x = math.cos(angle + math.pi/2)
+            perp_y = math.sin(angle + math.pi/2)
+            
+            points = [
+                (start_x - width * perp_x, start_y - width * perp_y),
+                (start_x + width * perp_x, start_y + width * perp_y),
+                (end_x + width * 1.5 * perp_x, end_y + width * 1.5 * perp_y),
+                (end_x - width * 1.5 * perp_x, end_y - width * 1.5 * perp_y)
+            ]
+            
+            pygame.draw.polygon(screen, (255, 255, 255), points)
+        
         gene_radius = 6 * zoom
         gene_size = min(6 * zoom, 24 * zoom / len(self.genes))
         base_angle = math.pi / 2  # Start from top
@@ -112,16 +149,38 @@ class Cell:
 
             pos_x = center_x + gene_radius * math.cos(angle)
             pos_y = center_y + gene_radius * math.sin(angle)
+            
+            if tick - math.floor(tick) <= 0.1:
+                self.geneBrightness = 128
+            else:
+                self.geneBrightness -= 1
+                if self.geneBrightness < 0:
+                    self.geneBrightness = 0
 
             # Primary gene
             points = self._calculate_gene_points(pos_x, pos_y, gene_size, angle)
-            pygame.draw.polygon(screen, geneColors[gene_x], points)
+            color = geneColors[gene_x]
+            if math.floor(tick) % len(self.genes) == i:
+                color = tuple(min(255, c + self.geneBrightness) for c in color)
+            pygame.draw.polygon(screen, color, points)
 
             # Secondary gene
             offset_x = gene_size * math.cos(angle + math.pi) / 2
             offset_y = gene_size * math.sin(angle + math.pi) / 2
             points = self._calculate_gene_points(pos_x + offset_x, pos_y + offset_y, gene_size, angle)
-            pygame.draw.polygon(screen, geneColors[gene_y], points)
+            color = geneColors[gene_y]
+            if math.floor(tick) % len(self.genes) == i:
+                color = tuple(min(255, c + self.geneBrightness) for c in color)
+            pygame.draw.polygon(screen, color, points)
+
+    def update(self):
+        if self.membraneHealth < 1:
+            newParticles = [Particle(self.x, self.y, 'waste', 2) for _ in range(10)]
+            particles.extend(newParticles)
+            for i, cell in enumerate(cells):
+                if cell == self:
+                    cells.pop(i)
+                    break
 
 class Wall:
     def __init__(self, x, y):
@@ -139,6 +198,9 @@ class Wall:
             return
         
         pygame.draw.rect(screen, (0, 0, 0), (scaled_x-1, scaled_y-1, scaled_size+2, scaled_size+2))
+    
+    def update(self):
+        pass
 
 class Particle:
     def __init__(self, x, y, type, radius):
@@ -287,6 +349,8 @@ def write_text(screen, text, x, y, color=(0, 0, 0), font_size=20):
     text_rect = text_surface.get_rect(center=(x, y))
     screen.blit(text_surface, text_rect)
 
+cellArrangement = generateMergerSponge(3**3)
+
 cells = []
 for y in range(len(cellArrangement)):
     for x in range(len(cellArrangement[y])):
@@ -383,7 +447,8 @@ while passed < animationTime:
     pygame.display.flip()
 
 while running:
-    dt = clock.tick(144) / 1000.0
+    dt = clock.tick(1000) / 1000.0
+    passed += dt
     
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -453,13 +518,21 @@ while running:
         
         if abs(pan_velocity_x) < 0.1: pan_velocity_x = 0
         if abs(pan_velocity_y) < 0.1: pan_velocity_y = 0
+    
+    #if passed > 1:
+    #    passed = 0
+    #    tick += 1
+    
+    tick += dt
 
     # This is the entire draw loop.
     screen.fill((255, 255, 255))
     for cell in cells:
         cell.draw(screen, offset_x, offset_y, zoom)
+        cell.update()
     
     for particle in particles:
+        if type(particle) != Particle: print(f"Non-particle type found. {particle}"); continue
         particle.update(550, 550)
         particle.draw(screen, offset_x, offset_y, zoom)
     

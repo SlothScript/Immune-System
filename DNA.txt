@@ -1,10 +1,20 @@
-startings           endings
-=========           =======
 none                none
 absorb              food
-repair              membrane
-expell              waste
+expell              membrane
+repair              waste
 remember            DNA[x to y]
 generate            RDNA[x to y]
-do                  internally
+do                  LANDMARK[weakest/strongest/...]
+                    internally
                     externally
+===========================
+startings           endings
+
+Basic God Given DNA
+-------------------
+do internally [7;7]
+absorb food [1;1]
+expell waste [2;2]
+repair membrane [3;3]
+remember LANDMARK[weakest] [5;7a]
+generate LANDMARK[weakest] [5;7a]
