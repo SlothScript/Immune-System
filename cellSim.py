@@ -3,7 +3,7 @@ import math
 import sys
 import random
 
-tenary = lambda a, b, c: b if a else c
+ternary = lambda a, b, c: b if a else c
 tick = 0
 cell_size = 20
 half_size = cell_size / 2
@@ -14,21 +14,21 @@ def generateMergerSponge(size):
     def nearest_power_of_3(n):
         power = 1
         while power < n:
-            power *= 3
+           power *= 3
         return power
 
     size = nearest_power_of_3(size)
-    
+
     if size == 1:
         return [[True]]
-    
+
     smaller = generateMergerSponge(size // 3)
     smaller_size = len(smaller)
-    
+  
     result = []
     for i in range(3 * smaller_size):
         result.append([False] * (3 * smaller_size))
-    
+  
     for i in range(smaller_size):
         for j in range(smaller_size):
             if smaller[i][j]:
@@ -45,7 +45,7 @@ def generateMergerSponge(size):
 
 pygame.init()
 clock = pygame.time.Clock()
-geneColors = [(40, 40, 40), (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255), (255, 255, 255)]
+geneColors = [(40, 40, 40), (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255), (127, 127, 127), (83, 195, 182)]
 screen = pygame.display.set_mode((800, 600))
 pygame.display.set_caption("Cell Simulation - Natch")
 
@@ -58,27 +58,28 @@ class Cell:
         self.y = y
         self.size = 20
         self.membraneHealth = 50
-        self.genes = ['0;0', '0;0', '0;0', '0;0', '0;0', '0;0', '0;0', '0;0']
+        self.genes = ['7;8', '1;1', '3;3', '3;3', '7;7', '2;2', '4;7a', '5;7a', '0;0']
         self._cache = {}  # Cache for polygon points
         self.doIn = True
         self.onGeneNumber = 0
         self.geneBrightness = 0
+        self.energy = 100
 
     def _calculate_gene_points(self, pos_x, pos_y, gene_size, angle):
         cache_key = (pos_x, pos_y, gene_size, angle)
         if cache_key in self._cache:
             return self._cache[cache_key]
-        
+    
         half_size = gene_size / 4
         points = [
-            (pos_x - half_size * math.cos(angle) + half_size * math.sin(angle),
-             pos_y - half_size * math.sin(angle) - half_size * math.cos(angle)),
-            (pos_x + half_size * math.cos(angle) + half_size * math.sin(angle),
-             pos_y + half_size * math.sin(angle) - half_size * math.cos(angle)),
-            (pos_x + half_size * math.cos(angle) - half_size * math.sin(angle),
-             pos_y + half_size * math.sin(angle) + half_size * math.cos(angle)),
-            (pos_x - half_size * math.cos(angle) - half_size * math.sin(angle),
-             pos_y - half_size * math.sin(angle) + half_size * math.cos(angle))
+                 (pos_x - half_size * math.cos(angle) + half_size * math.sin(angle),
+                  pos_y - half_size * math.sin(angle) - half_size * math.cos(angle)),
+                 (pos_x + half_size * math.cos(angle) + half_size * math.sin(angle),
+                  pos_y + half_size * math.sin(angle) - half_size * math.cos(angle)),
+                 (pos_x + half_size * math.cos(angle) - half_size * math.sin(angle),
+                  pos_y + half_size * math.sin(angle) + half_size * math.cos(angle)),
+                 (pos_x - half_size * math.cos(angle) - half_size * math.sin(angle),
+                  pos_y - half_size * math.sin(angle) + half_size * math.cos(angle))
         ]
         self._cache[cache_key] = points
         return points
@@ -87,7 +88,7 @@ class Cell:
         scaled_x = round((self.x + offset_x) * zoom)
         scaled_y = round((self.y + offset_y) * zoom)
         scaled_size = round(self.size * zoom)
-
+        
         if not is_visible_on_screen(scaled_x, scaled_y, scaled_size, scaled_size, screen.get_width(), screen.get_height()):
             return
 
@@ -144,7 +145,11 @@ class Cell:
         base_angle = math.pi / 2  # Start from top
 
         for i, gene in enumerate(self.genes):
-            gene_x, gene_y = map(int, gene.split(';'))
+            try:
+                gene_x, gene_y = map(int, gene.split(';'))
+            except:
+                gene_x = int(gene.split(';')[0])
+                gene_y = int(''.join(filter(str.isdigit, gene.split(';')[1])))
             angle = base_angle + (2 * math.pi * i) / len(self.genes)
 
             pos_x = center_x + gene_radius * math.cos(angle)
@@ -152,6 +157,7 @@ class Cell:
             
             if tick - math.floor(tick) <= 0.1:
                 self.geneBrightness = 128
+                self.executeGene(math.floor(tick) % len(self.genes))
             else:
                 self.geneBrightness -= 1
                 if self.geneBrightness < 0:
@@ -181,6 +187,94 @@ class Cell:
                 if cell == self:
                     cells.pop(i)
                     break
+    
+    def executeGene(self, index):
+        gene = self.genes[index]
+        geneA, geneB = gene.split(';')
+        geneA = int(geneA)
+        try:
+            geneB = int(geneB)
+        except:
+            pass
+        
+        if geneA == 1:
+            if geneB == 1 and not self.doIn:
+                foodParts = self.getNearbyParticles('food')
+                if foodParts:
+                    food = random.choice(foodParts)
+                    self.drawLaser(screen, food.x, food.y)
+                    particles.remove(food)
+                    self.energy += 10
+                    particles.append(Particle(self.x, self.y, 'generatedWaste', 2))
+            elif geneB == 2 and not self.doIn:
+                self.membraneHealth = 0
+                self.drawLaser(screen, self.x - 20, self.y - 20)
+                self.drawLaser(screen, self.x + 20, self.y - 20)
+                self.drawLaser(screen, self.x - 20, self.y + 20)
+                self.drawLaser(screen, self.x + 20, self.y + 20)
+        elif geneA == 2:
+            if geneB == 2 and not self.doIn:
+                self.membraneHealth = 0
+                self.drawLaser(screen, self.x - 20, self.y - 20)
+                self.drawLaser(screen, self.x + 20, self.y - 20)
+                self.drawLaser(screen, self.x - 20, self.y + 20)
+                self.drawLaser(screen, self.x + 20, self.y + 20)
+            elif geneB == 3 and self.doIn:
+                wasteParts = self.getInternalParticles('waste')
+                if wasteParts:
+                    waste = random.choice(wasteParts)
+                    self.drawLaser(screen, waste.x, waste.y)
+                    particles.remove(waste)
+        elif geneA == 3:
+            if geneB == 2 and not self.doIn:
+                self.membraneHealth += 15
+        elif geneA == 4:
+            # Use some processing to disect DNA/RDNA shorthand
+            # Fail if not doing internally
+            pass
+        elif geneA == 5:
+            # Use some processing to disect DNA/RDNA shorthand
+            # Generate UGO if not doing internally
+            pass
+        elif geneA == 6:
+            if geneB == 7:
+                self.doIn = True
+            elif geneB == 8:
+                self.doIn = False
+    
+    def drawLaser(self, screen, x, y):
+        scaled_x = round((x + offset_x) * zoom)
+        scaled_y = round((y + offset_y) * zoom)
+        
+        pygame.draw.line(screen, (255, 0, 0), (scaled_x, scaled_y), (scaled_x + 50, scaled_y + 50), int(zoom))
+
+    def getNearbyParticles(self, typeFilter=None):
+        # Check particles in a 60 radius area around the cell center
+        nearby_particles = []
+        for particle in particles:
+            distance = math.sqrt((particle.x - self.x)**2 + (particle.y - self.y)**2)
+            if distance <= 60:
+                if type is None or particle.type == type:
+                    nearby_particles.append(particle)
+        
+        if not typeFilter:
+            return nearby_particles
+        
+        return [particle for particle in nearby_particles if particle.type == typeFilter]
+
+    def getInternalParticles(self, typeFilter=None):
+        # Check particles in a 20 radius area around the cell center
+        nearby_particles = []
+        for particle in particles:
+            distance = math.sqrt((particle.x - self.x)**2 + (particle.y - self.y)**2)
+            if distance <= 20:
+                if type is None or particle.type == type:
+                    nearby_particles.append(particle)
+        
+        if not typeFilter:
+            return nearby_particles
+        
+        return [particle for particle in nearby_particles if particle.type == typeFilter]
 
 class Wall:
     def __init__(self, x, y):
@@ -222,9 +316,9 @@ class Particle:
         scaled_y = (self.y + offset_y) * zoom
         scaled_radius = self.radius * zoom
 
-        if not is_visible_on_screen(scaled_x - scaled_radius, scaled_y - scaled_radius, 
-                                  scaled_radius * 2, scaled_radius * 2, 
-                                  screen.get_width(), screen.get_height()):
+        if not is_visible_on_screen(scaled_x - scaled_radius, scaled_y - scaled_radius,
+                                    scaled_radius * 2, scaled_radius * 2,
+                                    screen.get_width(), screen.get_height()):
             return
 
         color = (255,0,0) if self.type == "food" else (150,75,0)
@@ -377,8 +471,8 @@ def FPSGraph():
     
     # Draw FPS graph
     for i in range(len(FPSs) - 1):
-        pygame.draw.line(screen, (0, 255, 0), 
-            (460 + i*2, 20 - max(0, min(15, (FPSs[i] / 144) * 15))), 
+        pygame.draw.line(screen, (0, 255, 0),
+            (460 + i*2, 20 - max(0, min(15, (FPSs[i] / 144) * 15))),
             (460 + (i+1)*2, 20 - max(0, min(15, (FPSs[i+1] / 144) * 15)))
         )
 
@@ -394,12 +488,13 @@ dragging = False
 last_mouse_pos = None
 FPSs = []
 particles = []
+
 for _ in range(500):
     valid = False
     while not valid:
         x = random.randint(0, 550)
         y = random.randint(0, 550)
-        particle = Particle(x, y, tenary(random.random() > 0.5, "food", "waste"), 2)
+        particle = Particle(x, y, ternary(random.random() > 0.5, "food", "waste"), 2)
         
         # Check if particle is inside any cell
         in_cell = False
@@ -508,7 +603,7 @@ while running:
     
     # Adjust offset to keep mouse position fixed
     offset_x = -(world_x * zoom - mouse_x) / zoom
-    offset_y = -(world_y * zoom - mouse_y) / zoom   
+    offset_y = -(world_y * zoom - mouse_y) / zoom  
     
     if not dragging:
         offset_x += pan_velocity_x
@@ -518,10 +613,6 @@ while running:
         
         if abs(pan_velocity_x) < 0.1: pan_velocity_x = 0
         if abs(pan_velocity_y) < 0.1: pan_velocity_y = 0
-    
-    #if passed > 1:
-    #    passed = 0
-    #    tick += 1
     
     tick += dt
 

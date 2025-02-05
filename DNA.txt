@@ -1,4 +1,3 @@
-none                none
 absorb              food
 expell              membrane
 repair              waste
@@ -10,11 +9,23 @@ do                  LANDMARK[weakest/strongest/...]
 ===========================
 startings           endings
 
+#0 => Null (None)
+
 Basic God Given DNA
 -------------------
-do internally [7;7]
-absorb food [1;1]
-expell waste [2;2]
+do externally [7;8]
 repair membrane [3;3]
-remember LANDMARK[weakest] [5;7a]
+repair membrane [3;3]
+absorb food [1;1]
+do internally [7;7]
+expell waste [2;2]
+remember LANDMARK[weakest] [4;7a]
+generate LANDMARK[weakest] [5;7a]
+---------------------------------
+Note: DNA/RNDA are shown in gene code as [geneA;geneB(num.num)]
+Example:
+remember RDNA[-1 to 3] [5;6(-1.3)]
+
+For LANDMARK, you put a-z for the option you want.
+Example:
 generate LANDMARK[weakest] [5;7a]
