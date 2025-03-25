@@ -1,6 +1,6 @@
 absorb              food
-expell              membrane
-repair              waste
+expell              waste
+repair              membrane
 remember            DNA[x to y]
 generate            RDNA[x to y]
 do                  LANDMARK[weakest/strongest/...]
@@ -13,11 +13,11 @@ startings           endings
 
 Basic God Given DNA
 -------------------
-do externally [7;8]
+do externally [6;8]
 repair membrane [3;3]
 repair membrane [3;3]
 absorb food [1;1]
-do internally [7;7]
+do internally [6;7]
 expell waste [2;2]
 remember LANDMARK[weakest] [4;7a]
 generate LANDMARK[weakest] [5;7a]

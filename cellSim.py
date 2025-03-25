@@ -52,18 +52,62 @@ pygame.display.set_caption("Cell Simulation - Natch")
 def is_visible_on_screen(x, y, width, height, screen_width, screen_height):
     return not (x > screen_width or x + width < 0 or y > screen_height or y + height < 0)
 
+class Laser:
+    def __init__(self, x, y, targetX, targetY):
+        self.x = x
+        self.y = y
+        self.tx = targetX
+        self.ty = targetY
+        self.thickness = 10
+        self.ot = self.thickness
+    
+    def draw(self, screen, offset_x, offset_y, zoom):
+            self.thickness = max(0.1, self.thickness - 0.2)
+            if self.thickness == 0.1:
+                return
+            
+            dx = self.tx - self.x
+            dy = self.ty - self.y
+            distance = math.sqrt(dx * dx + dy * dy)
+            
+            if distance == 0:
+                lasers.remove(self)
+            
+            num_points = 50
+            points = []
+            
+            for i in range(num_points):
+                progress = i / (num_points - 1)
+                x = self.x + dx * progress
+                y = self.y + dy * progress
+                edge_damping = math.sin(progress * math.pi)  # Creates a smooth curve that peaks in middle
+                wave_offset = math.sin(progress * 6 * math.pi + (self.thickness * 2)) * 20 * edge_damping
+                perpendicular_x = -dy / distance
+                perpendicular_y = dx / distance
+                x += perpendicular_x * wave_offset
+                y += perpendicular_y * wave_offset
+                
+                screen_x = (x + offset_x) * zoom
+                screen_y = (y + offset_y) * zoom
+                points.append((screen_x, screen_y))
+                
+            if len(points) >= 2:
+                pygame.draw.lines(screen, (255, 0, 0), False, points, max(1, int(self.thickness * zoom)))
+    
+
 class Cell:
     def __init__(self, x, y):
         self.x = x
         self.y = y
         self.size = 20
         self.membraneHealth = 50
-        self.genes = ['7;8', '1;1', '3;3', '3;3', '7;7', '2;2', '4;7a', '5;7a', '0;0']
+        self.genes = ['6;8', '3;3', '3;3', '1;1', '6;7', '2;2', '4;7a', '5;7a']
         self._cache = {}  # Cache for polygon points
         self.doIn = True
         self.onGeneNumber = 0
         self.geneBrightness = 0
         self.energy = 100
+        self.myTick = 0
 
     def _calculate_gene_points(self, pos_x, pos_y, gene_size, angle):
         cache_key = (pos_x, pos_y, gene_size, angle)
@@ -157,7 +201,6 @@ class Cell:
             
             if tick - math.floor(tick) <= 0.1:
                 self.geneBrightness = 128
-                self.executeGene(math.floor(tick) % len(self.genes))
             else:
                 self.geneBrightness -= 1
                 if self.geneBrightness < 0:
@@ -187,9 +230,16 @@ class Cell:
                 if cell == self:
                     cells.pop(i)
                     break
+        
+        if self.myTick != math.floor(tick):
+            self.myTick = math.floor(tick)
+            self.executeGene(math.floor(tick) % len(self.genes))
     
     def executeGene(self, index):
-        gene = self.genes[index]
+        try:
+            gene = self.genes[index]
+        except:
+            return
         geneA, geneB = gene.split(';')
         geneA = int(geneA)
         try:
@@ -202,32 +252,39 @@ class Cell:
                 foodParts = self.getNearbyParticles('food')
                 if foodParts:
                     food = random.choice(foodParts)
-                    self.drawLaser(screen, food.x, food.y)
+                    self.drawLaser(food.x, food.y)
                     particles.remove(food)
                     self.energy += 10
-                    particles.append(Particle(self.x, self.y, 'generatedWaste', 2))
-            elif geneB == 2 and not self.doIn:
+                    particles.append(Particle(self.x, self.y, 'waste', 2))
+            elif geneB == 3 and not self.doIn:
                 self.membraneHealth = 0
-                self.drawLaser(screen, self.x - 20, self.y - 20)
-                self.drawLaser(screen, self.x + 20, self.y - 20)
-                self.drawLaser(screen, self.x - 20, self.y + 20)
-                self.drawLaser(screen, self.x + 20, self.y + 20)
+                self.drawLaser(self.x - 20, self.y - 20)
+                self.drawLaser(self.x + 20, self.y - 20)
+                self.drawLaser(self.x - 20, self.y + 20)
+                self.drawLaser(self.x + 20, self.y + 20)
         elif geneA == 2:
-            if geneB == 2 and not self.doIn:
+            if geneB == 3 and not self.doIn:
                 self.membraneHealth = 0
-                self.drawLaser(screen, self.x - 20, self.y - 20)
-                self.drawLaser(screen, self.x + 20, self.y - 20)
-                self.drawLaser(screen, self.x - 20, self.y + 20)
-                self.drawLaser(screen, self.x + 20, self.y + 20)
-            elif geneB == 3 and self.doIn:
+                self.drawLaser(self.x - 20, self.y - 20)
+                self.drawLaser(self.x + 20, self.y - 20)
+                self.drawLaser(self.x - 20, self.y + 20)
+                self.drawLaser(self.x + 20, self.y + 20)
+            elif geneB == 2 and self.doIn:
                 wasteParts = self.getInternalParticles('waste')
                 if wasteParts:
-                    waste = random.choice(wasteParts)
-                    self.drawLaser(screen, waste.x, waste.y)
+                    # Weight particles by inverse distance - closer particles more likely
+                    weights = []
+                    for waste in wasteParts:
+                        distance = math.sqrt((waste.x - self.x)**2 + (waste.y - self.y)**2)
+                        weights.append(1.0 / (distance + 1))  # Add 1 to avoid division by zero
+                    waste = random.choices(wasteParts, weights=weights, k=1)[0]
+                    self.drawLaser(waste.x, waste.y)
                     particles.remove(waste)
         elif geneA == 3:
-            if geneB == 2 and not self.doIn:
+            if geneB == 3 and not self.doIn:
                 self.membraneHealth += 15
+                if self.membraneHealth > 50:
+                    self.membraneHealth = 50
         elif geneA == 4:
             # Use some processing to disect DNA/RDNA shorthand
             # Fail if not doing internally
@@ -242,19 +299,16 @@ class Cell:
             elif geneB == 8:
                 self.doIn = False
     
-    def drawLaser(self, screen, x, y):
-        scaled_x = round((x + offset_x) * zoom)
-        scaled_y = round((y + offset_y) * zoom)
-        
-        pygame.draw.line(screen, (255, 0, 0), (scaled_x, scaled_y), (scaled_x + 50, scaled_y + 50), int(zoom))
+    def drawLaser(self, x, y):
+        lasers.append(Laser(self.x, self.y, x, y))
 
     def getNearbyParticles(self, typeFilter=None):
-        # Check particles in a 60 radius area around the cell center
+        # Check particles in a 40 radius area around the cell center
         nearby_particles = []
         for particle in particles:
             distance = math.sqrt((particle.x - self.x)**2 + (particle.y - self.y)**2)
-            if distance <= 60:
-                if type is None or particle.type == type:
+            if distance <= 40:
+                if typeFilter is None or particle.type == typeFilter:
                     nearby_particles.append(particle)
         
         if not typeFilter:
@@ -263,12 +317,12 @@ class Cell:
         return [particle for particle in nearby_particles if particle.type == typeFilter]
 
     def getInternalParticles(self, typeFilter=None):
-        # Check particles in a 20 radius area around the cell center
+        # Check particles in a (20*sqrt(2))/2 radius area around the cell center
         nearby_particles = []
         for particle in particles:
             distance = math.sqrt((particle.x - self.x)**2 + (particle.y - self.y)**2)
-            if distance <= 20:
-                if type is None or particle.type == type:
+            if distance <= 14.15:
+                if typeFilter is None or particle.type == typeFilter:
                     nearby_particles.append(particle)
         
         if not typeFilter:
@@ -338,40 +392,70 @@ class Particle:
             if abs(grid_x - wall_grid_x) > 1 or abs(grid_y - wall_grid_y) > 1:
                 continue
             
-            # Calculate the closest point on the wall to the particle
-            closest_x = max(wall.x, min(self.x, wall.x + wall.size))
-            closest_y = max(wall.y, min(self.y, wall.y + wall.size))
+            # Calculate points for the wall's membrane (1 pixel thick border)
+            membrane_points = [
+                (wall.x, wall.y),                          # Top left
+                (wall.x + wall.size, wall.y),             # Top right
+                (wall.x + wall.size, wall.y + wall.size), # Bottom right
+                (wall.x, wall.y + wall.size)              # Bottom left
+            ]
             
-            # Calculate distance between closest point and particle center
-            distance_x = self.x - closest_x
-            distance_y = self.y - closest_y
-            distance = math.sqrt(distance_x**2 + distance_y**2)
-            
-            # If collision detected
-            if distance < self.radius:
-                # Calculate normal vector
-                if distance > 0:
-                    normal_x = distance_x / distance
-                    normal_y = distance_y / distance
-                else:
-                    normal_x = 1
-                    normal_y = 0
+            # Check collision with each membrane edge
+            for i in range(len(membrane_points)):
+                p1 = membrane_points[i]
+                p2 = membrane_points[(i + 1) % len(membrane_points)]
                 
-                # Calculate relative velocity
-                dot_product = (self.velx * normal_x + self.vely * normal_y)
+                # Calculate closest point on the line segment (membrane edge)
+                edge_length = math.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
+                if edge_length == 0:
+                    continue
                 
-                # Apply impulse
-                impulse = 2.0  # Bounce factor
-                self.velx -= impulse * dot_product * normal_x
-                self.vely -= impulse * dot_product * normal_y
+                # Vector from p1 to particle
+                v1_x = self.x - p1[0]
+                v1_y = self.y - p1[1]
                 
-                # Move particle out of wall
-                penetration = self.radius - distance
-                self.x += normal_x * penetration
-                self.y += normal_y * penetration
+                # Vector from p1 to p2
+                v2_x = p2[0] - p1[0]
+                v2_y = p2[1] - p1[1]
                 
-                # Damage wall
-                wall.membraneHealth -= 1
+                # Calculate projection
+                t = max(0, min(1, (v1_x * v2_x + v1_y * v2_y) / edge_length**2))
+                
+                # Find closest point on line segment
+                closest_x = p1[0] + t * v2_x
+                closest_y = p1[1] + t * v2_y
+                
+                # Calculate distance between closest point and particle center
+                distance_x = self.x - closest_x
+                distance_y = self.y - closest_y
+                distance = math.sqrt(distance_x**2 + distance_y**2)
+                
+                # If collision detected with membrane
+                if distance < self.radius + 1:  # 1 pixel for membrane thickness
+                    # Calculate normal vector
+                    if distance > 0:
+                        normal_x = distance_x / distance
+                        normal_y = distance_y / distance
+                    else:
+                        normal_x = 1
+                        normal_y = 0
+                    
+                    # Calculate relative velocity
+                    dot_product = (self.velx * normal_x + self.vely * normal_y)
+                    
+                    # Apply impulse
+                    impulse = 2.0  # Bounce factor
+                    self.velx -= impulse * dot_product * normal_x
+                    self.vely -= impulse * dot_product * normal_y
+                    
+                    # Move particle out of membrane
+                    penetration = (self.radius + 1) - distance
+                    self.x += normal_x * penetration
+                    self.y += normal_y * penetration
+                    
+                    # Damage wall
+                    wall.membraneHealth -= 1
+                    break
 
     def update(self, width, height):
         self.check_wall_collision(cells)
@@ -430,9 +514,7 @@ class Button:
     def handleEvents(self):
         for event in pygame.event.get():
             if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                print(f"Click detected at ({event.pos[0]}, {event.pos[1]})")
                 if self.x <= event.pos[0] <= self.x + self.width and self.y <= event.pos[1] <= self.y + self.height:
-                    print("Button clicked!")
                     self.action()
 
 def write_text(screen, text, x, y, color=(0, 0, 0), font_size=20):
@@ -488,6 +570,7 @@ dragging = False
 last_mouse_pos = None
 FPSs = []
 particles = []
+lasers = []
 
 for _ in range(500):
     valid = False
@@ -626,6 +709,9 @@ while running:
         if type(particle) != Particle: print(f"Non-particle type found. {particle}"); continue
         particle.update(550, 550)
         particle.draw(screen, offset_x, offset_y, zoom)
+    
+    for laser in lasers:
+        laser.draw(screen, offset_x, offset_y, zoom)
     
     write_text(screen, f"FPS: {int(clock.get_fps())}", 400, 10)
     FPSGraph()
