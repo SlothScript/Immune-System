@@ -4,7 +4,7 @@ repair              membrane
 remember            DNA[x to y]
 generate            RDNA[x to y]
 do                  LANDMARK[weakest/strongest/...]
-goto                internally
+                    internally
                     externally
                     memory
 ===========================
@@ -20,7 +20,6 @@ repair membrane [3;3]
 digest food [1;1]
 do internally [6;7]
 expell waste [2;2]
-goto     LANDMARK[weakest] [7;6a]
 remember LANDMARK[weakest] [4;6a]
 generate LANDMARK[weakest] [5;6a]
 ---------------------------------

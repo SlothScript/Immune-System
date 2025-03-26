@@ -9,6 +9,7 @@ cell_size = 20
 half_size = cell_size / 2
 damping = 0.9  # Reduces jitter post-collision
 friction = 0.99  # General velocity damping
+cellEditMode = False
 
 def generateMergerSponge(size):
     def nearest_power_of_3(n):
@@ -45,7 +46,7 @@ def generateMergerSponge(size):
 
 pygame.init()
 clock = pygame.time.Clock()
-geneColors = [(40, 40, 40), (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255), (127, 127, 127), (83, 195, 182)]
+geneColors = [(40, 40, 40), (255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255), (180, 100, 220), (83, 195, 182)]
 screen = pygame.display.set_mode((800, 600))
 pygame.display.set_caption("Cell Simulation - Natch")
 
@@ -101,14 +102,13 @@ class Cell:
         self.y = y
         self.size = 20
         self.membraneHealth = 120
-        self.genes = ['6;8', '3;3', '3;3', '1;1', '6;7', '2;2', '7;6a', '4;6a', '5;6a']
-        self.geneHealth = [100, 100, 100, 100, 100, 100, 100, 100, 100]
+        self.genes = ['6;8', '3;3', '3;3', '1;1', '6;7', '2;2', '4;6a', '5;6a']
+        self.geneHealth = [100, 100, 100, 100, 100, 100, 100, 100]
         self._cache = {}  # Cache for polygon points
         self.memory = ""
         self.doIn = True
         self.onGeneNumber = 0
         self.geneBrightness = 0
-        self.cursorAt = 0
         self.energy = 100
         self.myTick = 0
 
@@ -186,38 +186,7 @@ class Cell:
             ]
             
             pygame.draw.polygon(screen, (255, 255, 255), points)
-        
-            # Draw cursor
-            if len(self.genes) > 0:
-                cursor_radius = 3.5 * zoom
-                cursor_size = min(3.5 * zoom, 8 * zoom / len(self.genes))
-                cursor_angle = math.pi / 2 + (2 * math.pi * self.cursorAt) / len(self.genes)
 
-                # Calculate cursor position
-                cursor_x = center_x + cursor_radius * math.cos(cursor_angle)
-                cursor_y = center_y + cursor_radius * math.sin(cursor_angle)
-
-                # Calculate triangle points with simplified math
-                base_x = cursor_x - cursor_size/2 * math.cos(cursor_angle)
-                base_y = cursor_y - cursor_size/2 * math.sin(cursor_angle)
-                
-                if self.doIn:
-                    # Point outward
-                    point1 = (base_x, base_y)
-                    point2 = (base_x + cursor_size/2 * math.cos(cursor_angle + 2*math.pi/3), 
-                             base_y + cursor_size/2 * math.sin(cursor_angle + 2*math.pi/3))
-                    point3 = (base_x + cursor_size/2 * math.cos(cursor_angle - 2*math.pi/3), 
-                             base_y + cursor_size/2 * math.sin(cursor_angle - 2*math.pi/3))
-                else:
-                    # Point inward
-                    point1 = (base_x + cursor_size * math.cos(cursor_angle), 
-                             base_y + cursor_size * math.sin(cursor_angle))
-                    point2 = (base_x + cursor_size/2 * math.cos(cursor_angle + 2*math.pi/3), 
-                             base_y + cursor_size/2 * math.sin(cursor_angle + 2*math.pi/3))
-                    point3 = (base_x + cursor_size/2 * math.cos(cursor_angle - 2*math.pi/3), 
-                             base_y + cursor_size/2 * math.sin(cursor_angle - 2*math.pi/3))
-
-                pygame.draw.polygon(screen, (173, 216, 230), [point1, point2, point3])
         gene_radius = 6 * zoom
         gene_size = min(6 * zoom, 24 * zoom / len(self.genes))
         base_angle = math.pi / 2  # Start from top
@@ -371,9 +340,7 @@ class Cell:
             elif geneA == 4:
                 self.memory = gene
             elif geneA == 5:
-                self.genes[self.genes.index(gene)] = self.memory 
-            elif geneA == 7:
-                self.cursorAt = self.genes.index(gene)
+                self.genes[self.genes.index(gene)] = self.memory
         
     def drawLaser(self, x, y):
         lasers.append(Laser(self.x, self.y, x, y, 5, 2))
@@ -640,6 +607,151 @@ def FPSGraph():
             (460 + (i+1)*2, 20 - max(0, min(15, (FPSs[i+1] / 144) * 15)))
         )
 
+class cellEditUI:
+    def __init__(self):
+        self.x = -170
+        self.t = 0
+        self.selected_cell = None
+        self.active_block = None
+        self.block_value = ""
+        self.font = pygame.font.Font(None, 24)
+        self.scroll_y = 0
+        self.max_scroll = 0
+
+    def draw(self, screen):
+        if cellEditMode:
+            if self.x == -170:
+                self.x = 0
+            self.t += 0.3
+            self.x = 170 * (1 / (1 + math.exp(-self.t + 5))) - 170
+            if self.x >= 169:
+                self.x = 170
+        else:
+            if self.x >= -170:
+                self.t -= 0.3
+                self.x = 170 * (1 / (1 + math.exp(-self.t + 5))) - 170
+            if self.x <= -170:
+                self.x = -170
+
+        pygame.draw.rect(screen, (40, 40, 40), (self.x, 0, 170, 600))
+        pygame.draw.rect(screen, (10, 10, 10), (self.x, 0, 170, 600), 3)
+
+        if cellEditMode or self.x <= -160:
+            write_text(screen, "Cell Editor", self.x + 85, 30, color=(200, 200, 200))
+
+            if self.selected_cell:
+                write_text(screen, "Selected Cell:", self.x + 85, 70, color=(200, 200, 200))
+                write_text(screen, f"Pos: ({self.selected_cell.x}, {self.selected_cell.y})", self.x + 85, 100, color=(180, 180, 180))
+                write_text(screen, "DNA Blocks:", self.x + 85, 140, color=(200, 200, 200))
+
+                # Draw DNA blocks
+                block_height = 40
+                block_width = 65
+                blocks_per_row = 1
+                genes = ";".join(self.selected_cell.genes).split(";")
+                
+                # Calculate max scroll
+                total_rows = math.ceil(len(genes) / 2)
+                content_height = total_rows * (block_height + 10) + 170
+                self.max_scroll = max(0, content_height - 580)  # 580 is visible area height
+                
+                # Apply scroll clipping
+                pygame.draw.rect(screen, (40, 40, 40), (self.x, 160, 170, 440))
+                
+                for i in range(0, len(genes), 2):
+                    row = (i//2) // blocks_per_row
+                    col = (i//2) % blocks_per_row
+                    x = self.x + 20 + col * (block_width * 2 + 15)
+                    y = 170 + row * (block_height + 10) - self.scroll_y
+                    
+                    # Only draw if in visible area
+                    if 160 <= y <= 580:
+                        for j in range(2):
+                            if i + j >= len(genes):
+                                break
+                                
+                            color = geneColors[int(str(genes[i + j])[0])]
+                            
+                            block_x = x + (j * (block_width + 5))
+                            pygame.draw.rect(screen, color, (block_x, y, block_width, block_height))
+                            pygame.draw.rect(screen, (100, 100, 100), (block_x, y, block_width, block_height), 2)
+                            
+                            if i + j == self.active_block and self.block_value:
+                                display_text = self.block_value
+                            else:
+                                display_text = genes[i + j]
+                            write_text(screen, display_text, block_x + block_width//2, y + block_height//2, color=(255-color[0], 255-color[1], 255-color[2]))
+
+    def handleEvents(self, event):
+        if not cellEditMode:
+            return
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            mouse_x, mouse_y = event.pos
+            
+            if event.button == 4 and self.isMouseOver():  # Mouse wheel up
+                self.scroll_y = max(0, self.scroll_y - 20)
+            elif event.button == 5 and self.isMouseOver():  # Mouse wheel down
+                self.scroll_y = min(self.max_scroll, self.scroll_y + 20)
+            elif event.button == 1:  # Left click
+                # Adjust mouse position for offset and zoom
+                adjusted_mouse_x = (mouse_x / zoom) - offset_x
+                adjusted_mouse_y = (mouse_y / zoom) - offset_y
+
+                # Check if clicking a cell
+                for cell in cells:
+                    if isinstance(cell, Cell):
+                        cell_rect = pygame.Rect(cell.x, cell.y, 20, 20)
+                        if cell_rect.collidepoint(adjusted_mouse_x, adjusted_mouse_y):
+                            self.selected_cell = cell
+                            self.active_block = None
+                            self.block_value = ""
+                            self.scroll_y = 0  # Reset scroll when selecting new cell
+                            return
+
+                # Check if clicking DNA blocks
+                if self.selected_cell:
+                    block_size = 40
+                    blocks_per_row = 2
+                    genes = ";".join(self.selected_cell.genes).split(";")
+                    for i in range(0, len(genes), 2):
+                        row = (i//2) // blocks_per_row
+                        col = (i//2) % blocks_per_row
+                        x = self.x + 20 + col * (block_size * 2 + 15)
+                        y = 170 + row * (block_size + 10) - self.scroll_y
+                        
+                        for j in range(2):
+                            if i + j >= len(genes):
+                                break
+                            block_x = x + (j * (block_size + 5))
+                            block_rect = pygame.Rect(block_x, y, block_size, block_size)
+                            
+                            if block_rect.collidepoint(mouse_x, mouse_y):
+                                self.active_block = i + j
+                                genes = ";".join(self.selected_cell.genes).split(";")
+                                self.block_value = genes[i + j]
+                                return
+
+        elif event.type == pygame.KEYDOWN and self.active_block is not None:
+            if event.key == pygame.K_RETURN:
+                if self.block_value:
+                    genes = ";".join(self.selected_cell.genes).split(";")
+                    separator = ">" if random.random() > 0.5 else ")"
+                    genes[self.active_block] = self.block_value
+                    self.selected_cell.genes = separator.join(genes)
+                self.active_block = None
+                self.block_value = ""
+            elif event.key == pygame.K_UP:
+                current_value = int(self.block_value)
+                self.block_value = str(min(9, current_value + 1))
+            elif event.key == pygame.K_DOWN:
+                current_value = int(self.block_value)
+                self.block_value = str(max(0, current_value - 1))
+    
+    def isMouseOver(self):
+        mouse_x, _ = pygame.mouse.get_pos()
+        return self.x <= mouse_x <= self.x + 170
+
 clock = pygame.time.Clock()
 running = True
 offset_x = 0
@@ -653,6 +765,7 @@ last_mouse_pos = None
 FPSs = []
 particles = []
 lasers = []
+editUI = cellEditUI()
 
 for _ in range(500):
     valid = False
@@ -711,6 +824,7 @@ while running:
     passed += dt
     
     for event in pygame.event.get():
+        editUI.handleEvents(event)
         if event.type == pygame.QUIT:
             running = False
             pygame.quit()
@@ -722,9 +836,11 @@ while running:
                 pan_velocity_x = 0
                 pan_velocity_y = 0
             elif event.button == 4:  # Mouse wheel up
-                target_zoom *= 1.1
+                if not (cellEditMode and editUI.isMouseOver()):
+                    target_zoom *= 1.1
             elif event.button == 5:  # Mouse wheel down
-                target_zoom *= 0.9
+                if not (cellEditMode and editUI.isMouseOver()):
+                    target_zoom *= 0.9
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1:
                 dragging = False
@@ -740,8 +856,7 @@ while running:
                 last_mouse_pos = current_pos
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
-                # Open Cell Editor UI
-                pass
+                cellEditMode = not cellEditMode
             elif event.key == pygame.K_ESCAPE:
                 running = False
             elif event.key == pygame.K_r:
@@ -835,6 +950,8 @@ while running:
     
     write_text(screen, "Food/Waste: {:.2f}".format(foodWasteRatio), 10, 30, left=True)
     write_text(screen, "Tick: {:.2f}".format(tick), 10, 50, left=True)
+    
+    editUI.draw(screen)
     
     write_text(screen, f"FPS: {int(clock.get_fps())}", 400, 10)
     FPSGraph()
