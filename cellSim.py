@@ -213,7 +213,8 @@ class Cell:
             points = self._calculate_gene_points(pos_x, pos_y, gene_size, angle)
             color = geneColors[gene_x]
             if math.floor(tick) % len(self.genes) == i:
-                color = tuple(min(255, c + self.geneBrightness) for c in color)
+                color = tuple(max(0, min(255, int(c + self.geneBrightness))) for c in color)
+            color = tuple(max(0, min(255, c - int(255 - self.geneHealth[self.genes.index(gene)]*2.55))) for c in color)
             pygame.draw.polygon(screen, color, points)
 
             # Secondary gene
@@ -243,6 +244,10 @@ class Cell:
             gene = self.genes[index]
         except:
             return
+        
+        self.energy -= 3
+        self.geneHealth[index] -= random.randint(1, 4)
+        
         geneA, geneB = gene.split(';')
         geneA = int(geneA)
         try:
@@ -621,18 +626,19 @@ class cellEditUI:
     def draw(self, screen):
         if cellEditMode:
             if self.x == -170:
-                self.x = 0
+                self.t = 0
             self.t += 0.3
             self.x = 170 * (1 / (1 + math.exp(-self.t + 5))) - 170
-            if self.x >= 169:
-                self.x = 170
+            if self.x >= -0.01:
+                self.x = 0
         else:
-            if self.x >= -170:
-                self.t -= 0.3
-                self.x = 170 * (1 / (1 + math.exp(-self.t + 5))) - 170
+            if self.x == 0:
+                self.t = 10
+            self.t -= 0.3
+            self.x = 170 * (1 / (1 + math.exp(-self.t + 5))) - 171
             if self.x <= -170:
                 self.x = -170
-
+        
         pygame.draw.rect(screen, (40, 40, 40), (self.x, 0, 170, 600))
         pygame.draw.rect(screen, (10, 10, 10), (self.x, 0, 170, 600), 3)
 
@@ -735,10 +741,10 @@ class cellEditUI:
         elif event.type == pygame.KEYDOWN and self.active_block is not None:
             if event.key == pygame.K_RETURN:
                 if self.block_value:
-                    genes = ";".join(self.selected_cell.genes).split(";")
+                    genes = ";".join(self.selected_cell.genes).split(";") # type: ignore
                     separator = ">" if random.random() > 0.5 else ")"
                     genes[self.active_block] = self.block_value
-                    self.selected_cell.genes = separator.join(genes)
+                    self.selected_cell.genes = separator.join(genes) # type: ignore
                 self.active_block = None
                 self.block_value = ""
             elif event.key == pygame.K_UP:
