@@ -53,12 +53,13 @@ def is_visible_on_screen(x, y, width, height, screen_width, screen_height):
     return not (x > screen_width or x + width < 0 or y > screen_height or y + height < 0)
 
 class Laser:
-    def __init__(self, x, y, targetX, targetY):
+    def __init__(self, x, y, targetX, targetY, thickess, amplitude):
         self.x = x
         self.y = y
         self.tx = targetX
         self.ty = targetY
-        self.thickness = 10
+        self.thickness = thickess
+        self.amplitude = amplitude
         self.ot = self.thickness
     
     def draw(self, screen, offset_x, offset_y, zoom):
@@ -81,7 +82,7 @@ class Laser:
                 x = self.x + dx * progress
                 y = self.y + dy * progress
                 edge_damping = math.sin(progress * math.pi)  # Creates a smooth curve that peaks in middle
-                wave_offset = math.sin(progress * 6 * math.pi + (self.thickness * 2)) * 20 * edge_damping
+                wave_offset = math.sin(progress * 6 * math.pi + (self.thickness * 2)) * self.amplitude * edge_damping
                 perpendicular_x = -dy / distance
                 perpendicular_y = dx / distance
                 x += perpendicular_x * wave_offset
@@ -93,19 +94,21 @@ class Laser:
                 
             if len(points) >= 2:
                 pygame.draw.lines(screen, (255, 0, 0), False, points, max(1, int(self.thickness * zoom)))
-    
 
 class Cell:
     def __init__(self, x, y):
         self.x = x
         self.y = y
         self.size = 20
-        self.membraneHealth = 50
-        self.genes = ['6;8', '3;3', '3;3', '1;1', '6;7', '2;2', '4;7a', '5;7a']
+        self.membraneHealth = 120
+        self.genes = ['6;8', '3;3', '3;3', '1;1', '6;7', '2;2', '7;6a', '4;6a', '5;6a']
+        self.geneHealth = [100, 100, 100, 100, 100, 100, 100, 100, 100]
         self._cache = {}  # Cache for polygon points
+        self.memory = ""
         self.doIn = True
         self.onGeneNumber = 0
         self.geneBrightness = 0
+        self.cursorAt = 0
         self.energy = 100
         self.myTick = 0
 
@@ -143,7 +146,7 @@ class Cell:
         pygame.draw.rect(screen, (210, 180, 140), (scaled_x-1, scaled_y-1, scaled_size+2, scaled_size+2))
         
         # Draw cell membrane
-        membrane_width = round(self.membraneHealth / 25 * zoom)
+        membrane_width = round(self.membraneHealth / 60 * zoom)
         membrane_rect = pygame.Rect(scaled_x - 1, scaled_y - 1,
                                     scaled_size + 2, scaled_size + 2)
         pygame.draw.rect(screen, (245, 222, 179), membrane_rect, int(membrane_width))
@@ -184,6 +187,37 @@ class Cell:
             
             pygame.draw.polygon(screen, (255, 255, 255), points)
         
+            # Draw cursor
+            if len(self.genes) > 0:
+                cursor_radius = 3.5 * zoom
+                cursor_size = min(3.5 * zoom, 8 * zoom / len(self.genes))
+                cursor_angle = math.pi / 2 + (2 * math.pi * self.cursorAt) / len(self.genes)
+
+                # Calculate cursor position
+                cursor_x = center_x + cursor_radius * math.cos(cursor_angle)
+                cursor_y = center_y + cursor_radius * math.sin(cursor_angle)
+
+                # Calculate triangle points with simplified math
+                base_x = cursor_x - cursor_size/2 * math.cos(cursor_angle)
+                base_y = cursor_y - cursor_size/2 * math.sin(cursor_angle)
+                
+                if self.doIn:
+                    # Point outward
+                    point1 = (base_x, base_y)
+                    point2 = (base_x + cursor_size/2 * math.cos(cursor_angle + 2*math.pi/3), 
+                             base_y + cursor_size/2 * math.sin(cursor_angle + 2*math.pi/3))
+                    point3 = (base_x + cursor_size/2 * math.cos(cursor_angle - 2*math.pi/3), 
+                             base_y + cursor_size/2 * math.sin(cursor_angle - 2*math.pi/3))
+                else:
+                    # Point inward
+                    point1 = (base_x + cursor_size * math.cos(cursor_angle), 
+                             base_y + cursor_size * math.sin(cursor_angle))
+                    point2 = (base_x + cursor_size/2 * math.cos(cursor_angle + 2*math.pi/3), 
+                             base_y + cursor_size/2 * math.sin(cursor_angle + 2*math.pi/3))
+                    point3 = (base_x + cursor_size/2 * math.cos(cursor_angle - 2*math.pi/3), 
+                             base_y + cursor_size/2 * math.sin(cursor_angle - 2*math.pi/3))
+
+                pygame.draw.polygon(screen, (173, 216, 230), [point1, point2, point3])
         gene_radius = 6 * zoom
         gene_size = min(6 * zoom, 24 * zoom / len(self.genes))
         base_angle = math.pi / 2  # Start from top
@@ -249,13 +283,13 @@ class Cell:
         
         if geneA == 1:
             if geneB == 1 and not self.doIn:
-                foodParts = self.getNearbyParticles('food')
+                foodParts = self.getInternalParticles('food')
                 if foodParts:
-                    food = random.choice(foodParts)
-                    self.drawLaser(food.x, food.y)
-                    particles.remove(food)
-                    self.energy += 10
-                    particles.append(Particle(self.x, self.y, 'waste', 2))
+                    for food in foodParts:
+                        self.drawLaser(food.x, food.y)
+                        particles.remove(food)
+                        self.energy += 10
+                        particles.append(Particle(self.x, self.y, 'waste', 2))
             elif geneB == 3 and not self.doIn:
                 self.membraneHealth = 0
                 self.drawLaser(self.x - 20, self.y - 20)
@@ -280,18 +314,20 @@ class Cell:
                     waste = random.choices(wasteParts, weights=weights, k=1)[0]
                     self.drawLaser(waste.x, waste.y)
                     particles.remove(waste)
+            elif geneB == 1 and self.doIn:
+                foodParts = self.getInternalParticles('food')
+                if foodParts:
+                    food = random.choice(foodParts)
+                    self.drawLaser(food.x, food.y)
+                    particles.remove(food)
+                    particles.append(Particle(self.x, self.y, 'waste', 2))
         elif geneA == 3:
             if geneB == 3 and not self.doIn:
-                self.membraneHealth += 15
-                if self.membraneHealth > 50:
-                    self.membraneHealth = 50
-        elif geneA == 4:
-            # Use some processing to disect DNA/RDNA shorthand
-            # Fail if not doing internally
-            pass
-        elif geneA == 5:
-            # Use some processing to disect DNA/RDNA shorthand
-            # Generate UGO if not doing internally
+                self.membraneHealth += 25
+                if self.membraneHealth > 120:
+                    self.membraneHealth = 120
+        elif geneA in [4, 5, 7]:
+            self.processADNA(geneA, geneB)
             pass
         elif geneA == 6:
             if geneB == 7:
@@ -299,31 +335,60 @@ class Cell:
             elif geneB == 8:
                 self.doIn = False
     
+    def processADNA(self, geneA, geneB):
+        # format:
+        # 4/5(firstGene.lastGenne)
+        # 6a/b
+        
+        target_genes = []
+        
+        # ADNA nono's:
+        if geneA in [3,6]:
+            print("Invalid geneA:", geneA)
+            return
+        
+        # Select target genes
+        if geneB[0] in ['4', '5']:
+            startGene = geneB.split(".")[0][2:]
+            endGene = geneB.split(".")[1][:-1]
+            
+            if startGene in self.genes and endGene in self.genes:
+                target_genes = self.genes[self.genes.index(startGene):self.genes.index(endGene)]
+        
+        elif geneB[0] == '6':
+            if geneB[1] == 'a':
+                target_genes = [min(self.genes, key=lambda gene: self.geneHealth[self.genes.index(gene)])]
+            elif geneB[1] == 'b':
+                target_genes = [max(self.genes, key=lambda gene: self.geneHealth[self.genes.index(gene)])]
+        
+        # Apply effects to target genes
+        for gene in target_genes:
+            if geneA in [1, 2]:
+                if geneA == 1:
+                    self.energy += 3
+                self.genes.remove(gene)
+                particles.append(Particle(self.x, self.y, 'waste', 2))
+            elif geneA == 4:
+                self.memory = gene
+            elif geneA == 5:
+                self.genes[self.genes.index(gene)] = self.memory 
+            elif geneA == 7:
+                self.cursorAt = self.genes.index(gene)
+        
     def drawLaser(self, x, y):
-        lasers.append(Laser(self.x, self.y, x, y))
-
-    def getNearbyParticles(self, typeFilter=None):
-        # Check particles in a 40 radius area around the cell center
-        nearby_particles = []
-        for particle in particles:
-            distance = math.sqrt((particle.x - self.x)**2 + (particle.y - self.y)**2)
-            if distance <= 40:
-                if typeFilter is None or particle.type == typeFilter:
-                    nearby_particles.append(particle)
-        
-        if not typeFilter:
-            return nearby_particles
-        
-        return [particle for particle in nearby_particles if particle.type == typeFilter]
+        lasers.append(Laser(self.x, self.y, x, y, 5, 2))
 
     def getInternalParticles(self, typeFilter=None):
-        # Check particles in a (20*sqrt(2))/2 radius area around the cell center
+        # Check particles in a 20 radius area around the cell center
         nearby_particles = []
         for particle in particles:
-            distance = math.sqrt((particle.x - self.x)**2 + (particle.y - self.y)**2)
-            if distance <= 14.15:
+            distance = math.sqrt((particle.x - (self.x + self.size/2))**2 + (particle.y - (self.y + self.size/2))**2)
+            if distance <= 10:
                 if typeFilter is None or particle.type == typeFilter:
                     nearby_particles.append(particle)
+        
+        # Draw detection range circle
+        pygame.draw.circle(screen, (100,100,100), (int((self.x + self.size/2 + offset_x) * zoom), int((self.y + self.size/2 + offset_y) * zoom)), int(10 * zoom), 1)
         
         if not typeFilter:
             return nearby_particles
@@ -383,8 +448,22 @@ class Particle:
         grid_x = int(self.x // cell_size)
         grid_y = int(self.y // cell_size)
         
+        
         # Only check walls in neighboring grid cells
         for wall in walls:
+            if type(wall) == Cell and self.type == "food":
+                # Calculate if particle is inside the cell
+                is_inside = (self.x > wall.x and self.x < wall.x + wall.size and 
+                             self.y > wall.y and self.y < wall.y + wall.size)
+                
+                # Only damage cell if particle is actually touching the membrane
+                if is_inside:
+                    if not hasattr(self, 'last_damaged_cell') or self.last_damaged_cell != wall:
+                        wall.membraneHealth -= 1
+                        self.last_damaged_cell = wall
+                else:
+                    continue
+            
             wall_grid_x = int(wall.x // cell_size)
             wall_grid_y = int(wall.y // cell_size)
             
@@ -517,12 +596,15 @@ class Button:
                 if self.x <= event.pos[0] <= self.x + self.width and self.y <= event.pos[1] <= self.y + self.height:
                     self.action()
 
-def write_text(screen, text, x, y, color=(0, 0, 0), font_size=20):
+def write_text(screen, text, x, y, color=(0, 0, 0), font_size=20, left=False):
     if not is_visible_on_screen(x - 50, y - 10, 100, 20, screen.get_width(), screen.get_height()):
         return
     font = pygame.font.Font(None, font_size)
     text_surface = font.render(text, True, color)
-    text_rect = text_surface.get_rect(center=(x, y))
+    if left:
+        text_rect = text_surface.get_rect(topleft=(x, y))
+    else:
+        text_rect = text_surface.get_rect(center=(x, y))
     screen.blit(text_surface, text_rect)
 
 cellArrangement = generateMergerSponge(3**3)
@@ -656,6 +738,20 @@ while running:
                 pan_velocity_x = dx * 0.98
                 pan_velocity_y = dy * 0.98
                 last_mouse_pos = current_pos
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                # Open Cell Editor UI
+                pass
+            elif event.key == pygame.K_ESCAPE:
+                running = False
+            elif event.key == pygame.K_r:
+                # Reset zoom and offset
+                zoom = 1.0
+                target_zoom = 1.0
+                pan_velocity_x = 0
+                pan_velocity_y = 0
+                offset_x = 0
+                offset_y = 0
     
     # Check if mouse has been stationary
     current_time = pygame.time.get_ticks() / 1000.0  # Convert to seconds
@@ -712,6 +808,33 @@ while running:
     
     for laser in lasers:
         laser.draw(screen, offset_x, offset_y, zoom)
+    
+    foods = [particle for particle in particles if particle.type == "food"]
+    wastes = [particle for particle in particles if particle.type == "waste"]
+    
+    foodWasteRatio = len(foods) / len(wastes)
+    
+    # Use the foodwaste ratio to determine how much waste to transmute to food
+    if foodWasteRatio < 0.5:  # If there's too much waste compared to food
+        conversion_chance = 0.3 * (1 - foodWasteRatio/0.5)  # More conversion chance when ratio is lower
+        for waste in wastes[:10]:  # Convert up to 10 waste particles at a time
+            if random.random() < conversion_chance:  # Weighted chance based on ratio
+                waste.type = "food"
+                waste.color = (255, 0, 0)  # Change color to green for food
+        
+    if foodWasteRatio < 0.3:
+        write_text(screen, "Food: LOW", 10, 10, left=True)
+    elif foodWasteRatio < 0.5:
+        write_text(screen, "Food: OK", 10, 10, left=True)
+    elif foodWasteRatio > 1.6:
+        write_text(screen, "Food: ABUNDANT", 10, 10, left=True)
+    elif foodWasteRatio > 1:
+        write_text(screen, "Food: HIGH", 10, 10, left=True)
+    else:
+        write_text(screen, "Food: OK", 10, 10, left=True)   
+    
+    write_text(screen, "Food/Waste: {:.2f}".format(foodWasteRatio), 10, 30, left=True)
+    write_text(screen, "Tick: {:.2f}".format(tick), 10, 50, left=True)
     
     write_text(screen, f"FPS: {int(clock.get_fps())}", 400, 10)
     FPSGraph()

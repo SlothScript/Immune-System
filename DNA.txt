@@ -1,31 +1,33 @@
-absorb              food
+digest              food
 expell              waste
 repair              membrane
 remember            DNA[x to y]
 generate            RDNA[x to y]
 do                  LANDMARK[weakest/strongest/...]
-                    internally
+goto                internally
                     externally
+                    memory
 ===========================
 startings           endings
 
 #0 => Null (None)
 
-Basic God Given DNA
+Basic Natch Given DNA
 -------------------
 do externally [6;8]
 repair membrane [3;3]
 repair membrane [3;3]
-absorb food [1;1]
+digest food [1;1]
 do internally [6;7]
 expell waste [2;2]
-remember LANDMARK[weakest] [4;7a]
-generate LANDMARK[weakest] [5;7a]
+goto     LANDMARK[weakest] [7;6a]
+remember LANDMARK[weakest] [4;6a]
+generate LANDMARK[weakest] [5;6a]
 ---------------------------------
 Note: DNA/RNDA are shown in gene code as [geneA;geneB(num.num)]
 Example:
-remember RDNA[-1 to 3] [5;6(-1.3)]
+remember RDNA[-1 to 3] [4;5(-1.3)]
 
-For LANDMARK, you put a-z for the option you want.
+For LANDMARK, you put a-z (currently only a and b are used) for the option you want.
 Example:
-generate LANDMARK[weakest] [5;7a]
+generate LANDMARK[weakest] [5;6a]
