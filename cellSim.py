@@ -820,6 +820,7 @@ while passed < animationTime:
     
     write_text(screen, "Developed by", 400, 250, fadeInColor, 120)
     write_text(screen, "Natch", 400, 350, fadeInColor, 120)
+    write_text(screen, "Immune System Simulator © 2025 by Nathaniel Cole is licensed under CC BY-NC-SA 4.0.\n To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-sa/4.0/. View more in the LICENSE file.", 400, 580, fadeInColor, 12)
     
     pygame.draw.rect(screen, (180, 180, 180), (0, 0, (passed / animationTime) * 800, 4))
     

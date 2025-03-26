@@ -1,4 +1,0 @@
-Virus Simulator
----------------
-
-Each cell has a piece of DNA genes that has an A and B which are kinda code blocks
