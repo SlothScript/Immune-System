@@ -675,17 +675,58 @@ class cellEditUI:
                         for j in range(2):
                             if i + j >= len(genes):
                                 break
-                                
+                            
                             color = geneColors[int(str(genes[i + j])[0])]
                             
                             block_x = x + (j * (block_width + 5))
                             pygame.draw.rect(screen, color, (block_x, y, block_width, block_height))
-                            pygame.draw.rect(screen, (100, 100, 100), (block_x, y, block_width, block_height), 2)
+                            if i + j == self.active_block:
+                                pygame.draw.rect(screen, (30, 160, 20), (block_x, y, block_width, block_height), 2)
+                            else:
+                                pygame.draw.rect(screen, (100, 100, 100), (block_x, y, block_width, block_height), 2)
                             
                             if i + j == self.active_block and self.block_value:
                                 display_text = self.block_value
                             else:
                                 display_text = genes[i + j]
+                            
+                            dnaAText = ["digest", "expell", "repair", "remmbr", "gnrte", "do"]
+                            dnaBText = ["food", "waste", "mmbrne", "DNA", "RDNA", "LNDMRK", "intrnly", "extrnly", "memory"]
+                            
+                            try:
+                                if j == 0:
+                                    display_text = dnaAText[int(display_text) - 1]
+                                elif j == 1:
+                                    base_text = dnaBText[int(str(display_text)[0]) - 1]
+                                    if "DNA" in base_text or "LNDMRK" in base_text:
+                                        parts = display_text.split(";")
+                                        if len(parts) > 1:
+                                            value = parts[1]
+                                            if "(" in value and ")" in value:
+                                                value = value[value.find("(")+1:value.find(")")]
+                                            if base_text == "DNA":
+                                                display_text = f"DNA[{value}]"
+                                            elif base_text == "RDNA":
+                                                display_text = f"RDNA[{value}]"
+                                            elif "LNDMRK" in base_text:
+                                                display_text = "FTT -> ULM"
+                                        else:
+                                            if "LNDMRK" in base_text:
+                                                if display_text == "6a":
+                                                    display_text = "STRNGST"
+                                                elif display_text == "6b":
+                                                    display_text = "WEAKEST"
+                                                else:
+                                                    display_text = "FTT -> ULM"
+                                            else:
+                                                display_text = base_text
+                                    else:
+                                        display_text = base_text
+                            except Exception as e:
+                                print(e)
+                                print(f"Failed to translate gene #{j}: '" + display_text + "'")
+                                display_text = "FTT -> " + display_text
+                                pass                            
                             write_text(screen, display_text, block_x + block_width//2, y + block_height//2, color=(255-color[0], 255-color[1], 255-color[2]))
 
     def handleEvents(self, event):
@@ -716,21 +757,22 @@ class cellEditUI:
                             return
 
                 # Check if clicking DNA blocks
-                if self.selected_cell:
-                    block_size = 40
-                    blocks_per_row = 2
+                if self.selected_cell and self.isMouseOver():
+                    block_height = 40
+                    block_width = 65
+                    blocks_per_row = 1
                     genes = ";".join(self.selected_cell.genes).split(";")
                     for i in range(0, len(genes), 2):
                         row = (i//2) // blocks_per_row
                         col = (i//2) % blocks_per_row
-                        x = self.x + 20 + col * (block_size * 2 + 15)
-                        y = 170 + row * (block_size + 10) - self.scroll_y
+                        x = self.x + 20 + col * (block_width * 2 + 15)
+                        y = 170 + row * (block_height + 10) - self.scroll_y
                         
                         for j in range(2):
                             if i + j >= len(genes):
                                 break
-                            block_x = x + (j * (block_size + 5))
-                            block_rect = pygame.Rect(block_x, y, block_size, block_size)
+                            block_x = x + (j * (block_width + 5))
+                            block_rect = pygame.Rect(block_x, y, block_width, block_height)
                             
                             if block_rect.collidepoint(mouse_x, mouse_y):
                                 self.active_block = i + j
@@ -742,9 +784,9 @@ class cellEditUI:
             if event.key == pygame.K_RETURN:
                 if self.block_value:
                     genes = ";".join(self.selected_cell.genes).split(";") # type: ignore
-                    separator = ">" if random.random() > 0.5 else ")"
                     genes[self.active_block] = self.block_value
-                    self.selected_cell.genes = separator.join(genes) # type: ignore
+                    gene_pairs = [';'.join(genes[i:i+2]) for i in range(0, len(genes), 2)]
+                    self.selected_cell.genes = gene_pairs # type: ignore
                 self.active_block = None
                 self.block_value = ""
             elif event.key == pygame.K_UP:
@@ -820,7 +862,7 @@ while passed < animationTime:
     
     write_text(screen, "Developed by", 400, 250, fadeInColor, 120)
     write_text(screen, "Natch", 400, 350, fadeInColor, 120)
-    write_text(screen, "Immune System Simulator © 2025 by Nathaniel Cole is licensed under CC BY-NC-SA 4.0.\n To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-sa/4.0/. View more in the LICENSE file.", 400, 580, fadeInColor, 12)
+    write_text(screen, "Immune System Simulator © 2025 by Nathaniel Cole is licensed under CC BY-NC-SA 4.0. To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-sa/4.0/. View more in the LICENSE file.", 400, 580, fadeInColor, 12)
     
     pygame.draw.rect(screen, (180, 180, 180), (0, 0, (passed / animationTime) * 800, 4))
     
