@@ -10,6 +10,7 @@ half_size = cell_size / 2
 damping = 0.9  # Reduces jitter post-collision
 friction = 0.99  # General velocity damping
 cellEditMode = False
+ugmMode = False
 
 def generateMergerSponge(size):
     def nearest_power_of_3(n):
@@ -546,6 +547,432 @@ class Particle:
         self.velx *= 0.3
         self.vely *= 0.3
 
+class UnboundGeneticMaterial(Particle):
+    def __init__(self, x, y, velx, vely, genes):
+        super().__init__(x, y, velx, vely)
+        self.genes = genes
+        self.radius = 3
+        self.color = (150, 50, 150)  # Purple color for genetic material
+        self.creation_time = pygame.time.get_ticks()
+        self.half_life = 15000  # 15 seconds in milliseconds
+    
+    def draw(self, screen, offset_x=0, offset_y=0, zoom=1):
+        # Calculate position
+        pos = (int((self.x + offset_x) * zoom), int((self.y + offset_y) * zoom))
+        radius = int(self.radius * zoom)
+
+        # Check if visible on screen
+        if not is_visible_on_screen(pos[0] - radius, pos[1] - radius, radius * 2, radius * 2, screen.get_width(), screen.get_height()):
+            return
+
+        # Draw the genetic material circle
+        pygame.draw.circle(screen, self.color, pos, radius)
+
+        # Draw the genes as small colored dots around the circle
+        if self.genes:
+            for i, gene in enumerate(self.genes):
+                try:
+                    angle = (i / len(self.genes)) * 2 * math.pi
+                    gene_x = pos[0] + math.cos(angle) * (self.radius + 2) * zoom
+                    gene_y = pos[1] + math.sin(angle) * (self.radius + 2) * zoom
+                    gene_color = geneColors[int(str(gene)[0])]
+                    pygame.draw.circle(screen, gene_color, (int(gene_x), int(gene_y)), max(1, int(1 * zoom)))
+                except (IndexError, ValueError):
+                    # Skip invalid genes or missing colors
+                    continue
+    
+    def check_wall_collision(self, walls):
+        cell_size = 20  # Size of grid cells
+        grid_x = int(self.x // cell_size)
+        grid_y = int(self.y // cell_size)
+        
+        # Only check walls in neighboring grid cells
+        for wall in walls:
+            if type(wall) == Cell and self.type == "food":
+                # Calculate if particle is inside the cell
+                is_inside = (self.x > wall.x and self.x < wall.x + wall.size and 
+                             self.y > wall.y and self.y < wall.y + wall.size)
+                
+                # Only damage cell if particle is actually touching the membrane
+                if is_inside:
+                    if not hasattr(self, 'last_damaged_cell') or self.last_damaged_cell != wall:
+                        wall.membraneHealth -= 1
+                        self.last_damaged_cell = wall
+                else:
+                    continue
+            
+            wall_grid_x = int(wall.x // cell_size)
+            wall_grid_y = int(wall.y // cell_size)
+            
+            # Skip walls that are too far away
+            if abs(grid_x - wall_grid_x) > 1 or abs(grid_y - wall_grid_y) > 1:
+                continue
+            
+            # Calculate points for the wall's membrane (1 pixel thick border)
+            membrane_points = [
+                (wall.x, wall.y),                          # Top left
+                (wall.x + wall.size, wall.y),             # Top right
+                (wall.x + wall.size, wall.y + wall.size), # Bottom right
+                (wall.x, wall.y + wall.size)              # Bottom left
+            ]
+            
+            # Check collision with each membrane edge
+            for i in range(len(membrane_points)):
+                p1 = membrane_points[i]
+                p2 = membrane_points[(i + 1) % len(membrane_points)]
+                
+                # Calculate closest point on the line segment (membrane edge)
+                edge_length = math.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
+                if edge_length == 0:
+                    continue
+                
+                # Vector from p1 to particle
+                v1_x = self.x - p1[0]
+                v1_y = self.y - p1[1]
+                
+                # Vector from p1 to p2
+                v2_x = p2[0] - p1[0]
+                v2_y = p2[1] - p1[1]
+                
+                # Calculate projection
+                t = max(0, min(1, (v1_x * v2_x + v1_y * v2_y) / edge_length**2))
+                
+                # Find closest point on line segment
+                closest_x = p1[0] + t * v2_x
+                closest_y = p1[1] + t * v2_y
+                
+                # Calculate distance between closest point and particle center
+                distance_x = self.x - closest_x
+                distance_y = self.y - closest_y
+                distance = math.sqrt(distance_x**2 + distance_y**2)
+                
+                # If collision detected with membrane
+                if distance < self.radius + 1:  # 1 pixel for membrane thickness
+                    # Calculate normal vector
+                    if distance > 0:
+                        normal_x = distance_x / distance
+                        normal_y = distance_y / distance
+                    else:
+                        normal_x = 1
+                        normal_y = 0
+                    
+                    # Calculate relative velocity
+                    dot_product = (self.velx * normal_x + self.vely * normal_y)
+                    
+                    # Apply impulse
+                    impulse = 2.0  # Bounce factor
+                    self.velx -= impulse * dot_product * normal_x
+                    self.vely -= impulse * dot_product * normal_y
+                    
+                    # Move particle out of membrane
+                    penetration = (self.radius + 1) - distance
+                    self.x += normal_x * penetration
+                    self.y += normal_y * penetration
+                    
+                    # Damage wall
+                    wall.membraneHealth -= 1
+                    
+                    if type(wall) == Cell:
+                        wall.genes = self.genes + wall.genes
+                        wall.geneHealth.extend([100 for _ in range(len(wall.genes))])
+                        return True
+                    break
+    
+    def update(self, width, height): # type: ignore
+        super().update(width, height)
+        
+        # Check for decay based on half-life
+        current_time = pygame.time.get_ticks()
+        time_alive = current_time - self.creation_time
+        
+        # Random chance to decay based on half-life
+        if time_alive > self.half_life:
+            decay_chance = random.random()
+            if decay_chance < 0.1:  # 10% chance per update after half-life
+                # Create waste particle at current position
+                particles.append(Particle(self.x, self.y, "waste", 2))
+                return True  # Signal that this genetic material should be removed
+        
+        # Check for cell collision
+        if self.check_wall_collision(cells):
+            return True  # Signal that this genetic material should be removed
+
+class UGMGenerator:
+    def __init__(self):
+        self.x = 800
+        self.t = 1
+        self.selected_ugm = None
+        self.genes = ["1;1"]  # Default genes for new UGM
+        self.font = pygame.font.Font(None, 24)
+        self.placing = False
+        self.start_pos = None
+        self.end_pos = None  # Target position for dragging
+        self.active_block = None
+        self.block_value = ""
+        self.scroll_y = 0
+        self.max_scroll = 0
+
+    def draw(self, screen):
+        if ugmMode:
+            if self.x >= 800:
+                self.t = 1
+            self.t += 0.3
+            self.x = 800 - (170 * (1 / (1 + math.exp(-self.t + 5))))
+            if self.x <= 630:
+                self.x = 630
+        else:
+            if self.x <= 630:
+                self.t = 10
+            self.t -= 0.3
+            self.x = 800 - (170 * (1 / (1 + math.exp(-self.t + 5))))
+            if self.x >= 800:
+                self.x = 800
+        
+        pygame.draw.rect(screen, (40, 40, 40), (self.x, 0, 170, 600))
+        pygame.draw.rect(screen, (10, 10, 10), (self.x, 0, 170, 600), 3)
+
+        if ugmMode:
+            write_text(screen, "UGM Generator", self.x + 85, 30, color=(200, 200, 200))
+            
+            # Place UGM button
+            pygame.draw.rect(screen, (60, 120, 60), (self.x + 35, 70, 100, 30))
+            write_text(screen, "Place UGM", self.x + 85, 85, color=(200, 200, 200))
+
+            # DNA editing section
+            write_text(screen, "DNA Blocks:", self.x + 85, 140, color=(200, 200, 200))
+
+            # Add/Remove DNA buttons
+            pygame.draw.rect(screen, (60, 60, 60), (self.x + 130, 130, 20, 20))
+            pygame.draw.rect(screen, (60, 60, 60), (self.x + 20, 130, 20, 20))
+            write_text(screen, "+", self.x + 140, 140, color=(200, 200, 200))
+            write_text(screen, "-", self.x + 30, 140, color=(200, 200, 200))
+
+            # Draw DNA blocks
+            block_height = 40
+            block_width = 65
+            genes = ";".join(self.genes).split(";")
+            
+            # Calculate max scroll
+            total_rows = math.ceil(len(genes) / 2)
+            content_height = total_rows * (block_height + 10) + 170
+            self.max_scroll = max(0, content_height - 580)  # 580 is visible area height
+            
+            # Apply scroll clipping
+            pygame.draw.rect(screen, (40, 40, 40), (self.x, 160, 170, 440))
+            
+            for i in range(0, len(genes), 2):
+                row = i // 2
+                y = 170 + row * (block_height + 10) - self.scroll_y
+                
+                # Only draw if in visible area
+                if 160 <= y <= 580:
+                    for j in range(2):
+                        if i + j >= len(genes):
+                            break
+                        
+                        color = geneColors[int(str(genes[i + j])[0])]
+                        block_x = self.x + 20 + (j * (block_width + 5))
+                        
+                        pygame.draw.rect(screen, color, (block_x, y, block_width, block_height))
+                        if i + j == self.active_block:
+                            pygame.draw.rect(screen, (30, 160, 20), (block_x, y, block_width, block_height), 2)
+                        else:
+                            pygame.draw.rect(screen, (100, 100, 100), (block_x, y, block_width, block_height), 2)
+                        
+                        # DNA-to-English translation
+                        display_text = genes[i + j]
+                        dnaAText = ["digest", "expell", "repair", "remmbr", "gnrte", "do"]
+                        dnaBText = ["food", "waste", "mmbrne", "DNA", "RDNA", "LNDMRK", "intrnly", "extrnly", "memory"]
+                        
+                        try:
+                            if j == 0:
+                                display_text = dnaAText[int(display_text) - 1]
+                            elif j == 1:
+                                base_text = dnaBText[int(str(display_text)[0]) - 1]
+                                if "DNA" in base_text or "LNDMRK" in base_text:
+                                    parts = display_text.split(";")
+                                    if len(parts) > 1:
+                                        value = parts[1]
+                                        if "(" in value and ")" in value:
+                                            value = value[value.find("(")+1:value.find(")")]
+                                        if base_text == "DNA":
+                                            display_text = f"DNA[{value}]"
+                                        elif base_text == "RDNA":
+                                            display_text = f"RDNA[{value}]"
+                                        elif "LNDMRK" in base_text:
+                                            display_text = "FTT -> ULM"
+                                    else:
+                                        if "LNDMRK" in base_text:
+                                            if display_text == "6a":
+                                                display_text = "STRNGST"
+                                            elif display_text == "6b":
+                                                display_text = "WEAKEST"
+                                            else:
+                                                display_text = "FTT -> ULM"
+                                        else:
+                                            display_text = base_text
+                                else:
+                                    display_text = base_text
+                        except Exception as e:
+                            print(e)
+                            print(f"Failed to translate gene #{j}: '" + display_text + "'")
+                            display_text = "FTT -> " + display_text
+                            pass
+                        
+                        # Draw text with outline
+                        write_text(screen, display_text, block_x + block_width // 2, y + block_height // 2, color=(255-color[0], 255-color[1], 255-color[2]))
+
+        # Draw transparent UGM and arrow if placing
+        if self.placing and self.start_pos:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            self.end_pos = (mouse_x / zoom - offset_x, mouse_y / zoom - offset_y)
+            
+            # Draw transparent UGM
+            preview_surface = pygame.Surface((40, 40), pygame.SRCALPHA)
+            pygame.draw.circle(preview_surface, (150, 50, 150, 128), (20, 20), zoom * 3)
+            
+            # Draw gene markers
+            for i, gene in enumerate(self.genes):
+                angle = (i / len(self.genes)) * 2 * math.pi
+                gene_x = 20 + math.cos(angle) * 8
+                gene_y = 20 + math.sin(angle) * 8
+                
+                # Get gene colors
+                gene_parts = gene.split(';')
+                primary_gene = int(gene_parts[0])
+                secondary_gene = int(''.join(filter(str.isdigit, gene_parts[1])))
+                
+                # Draw semi-transparent gene markers
+                primary_color = geneColors[primary_gene] + (128,)  # Add alpha channel
+                secondary_color = geneColors[secondary_gene] + (128,)
+                
+                pygame.draw.circle(preview_surface, primary_color, (int(gene_x), int(gene_y)), zoom)
+                pygame.draw.circle(preview_surface, secondary_color, (int(gene_x + 2), int(gene_y)), zoom)
+            
+            # Convert world coordinates to screen coordinates for placement
+            screen_x = (self.start_pos[0] + offset_x) * zoom - 20
+            screen_y = (self.start_pos[1] + offset_y) * zoom - 20
+            screen.blit(preview_surface, (screen_x, screen_y))
+            
+            # Draw arrow
+            start_screen_x = (self.start_pos[0] + offset_x) * zoom
+            start_screen_y = (self.start_pos[1] + offset_y) * zoom
+            end_screen_x = (self.end_pos[0] + offset_x) * zoom
+            end_screen_y = (self.end_pos[1] + offset_y) * zoom
+            pygame.draw.line(screen, (0, 0, 0), (start_screen_x, start_screen_y), (end_screen_x, end_screen_y), 2)
+            pygame.draw.circle(screen, (0, 0, 0), (int(end_screen_x), int(end_screen_y)), 5)
+
+    def handleEvents(self, event):
+        if not ugmMode:
+            return
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            mouse_x, mouse_y = event.pos
+            
+            if event.button == 4:  # Mouse wheel up
+                self.scroll_y = max(0, self.scroll_y - 20)
+            elif event.button == 5:  # Mouse wheel down
+                self.scroll_y = min(self.max_scroll, self.scroll_y + 20)
+            elif event.button == 1:  # Left click
+                if self.placing:
+                    # Adjust for offset and zoom
+                    adjusted_x = (mouse_x / zoom) - offset_x
+                    adjusted_y = (mouse_y / zoom) - offset_y
+                    self.start_pos = (adjusted_x, adjusted_y)
+                    return
+                
+                # Check for add/remove DNA buttons
+                if self.x + 130 <= mouse_x <= self.x + 150 and 130 <= mouse_y <= 150:
+                    genes = ";".join(self.genes).split(";")
+                    genes.extend(["1", "1"])
+                    self.genes = [';'.join(genes[i:i+2]) for i in range(0, len(genes), 2)]
+                    return
+                elif self.x + 20 <= mouse_x <= self.x + 40 and 130 <= mouse_y <= 150:
+                    genes = ";".join(self.genes).split(";")
+                    if len(genes) > 2:  # Ensure at least one pair remains
+                        genes = genes[:-2]
+                        self.genes = [';'.join(genes[i:i+2]) for i in range(0, len(genes), 2)]
+                    return
+
+                # Check if clicking the "Place UGM" button
+                if self.x + 35 <= mouse_x <= self.x + 135 and 70 <= mouse_y <= 100:
+                    self.placing = True
+                    self.start_pos = None
+                    return
+                
+                # Check if clicking DNA blocks
+                block_height = 40
+                block_width = 65
+                for i in range(len(self.genes)):  # Loop through genes
+                    row = i  # Since each gene occupies one row
+                    y = 170 + row * (block_height + 10) - self.scroll_y
+
+                    # Only check blocks within the visible area
+                    if y + block_height < 160 or y > 580:
+                        continue
+
+                    for j in range(2):
+                        block_x = self.x + 20 + (j * (block_width + 5))
+                        block_rect = pygame.Rect(block_x, y, block_width, block_height)
+
+                        # Adjust mouse_y by subtracting self.scroll_y
+                        adjusted_mouse_y = mouse_y + self.scroll_y
+
+                        if block_rect.collidepoint(mouse_x, adjusted_mouse_y):
+                            self.active_block = i * 2 + j
+                            self.block_value = self.genes[row].split(";")[j]  # Fix indexing
+                            return
+
+        elif event.type == pygame.KEYDOWN and self.active_block is not None:
+            try:
+                current_value = int(self.block_value)
+
+                if event.key == pygame.K_UP:
+                    self.block_value = str(min(9, current_value + 1))
+                elif event.key == pygame.K_DOWN:
+                    self.block_value = str(max(0, current_value - 1))
+                
+                # Apply changes immediately
+                genes = ";".join(self.genes).split(";")
+                genes[self.active_block] = self.block_value
+                self.genes = [';'.join(genes[i:i+2]) for i in range(0, len(genes), 2)]
+
+            except ValueError:
+                pass
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1 and self.placing and self.start_pos:
+                # Adjust for offset and zoom
+                mouse_x = event.pos[0]
+                mouse_y = event.pos[1]
+                
+                adjusted_start_x = (self.start_pos[0] * zoom) + offset_x
+                adjusted_start_y = (self.start_pos[1] * zoom) + offset_y
+                adjusted_end_x = (mouse_x / zoom) - offset_x
+                adjusted_end_y = (mouse_y / zoom) - offset_y
+
+                # Calculate direction vector and normalize it
+                direction_x = adjusted_end_x - adjusted_start_x
+                direction_y = adjusted_end_y - adjusted_start_y
+                magnitude = math.sqrt(direction_x**2 + direction_y**2)
+                if magnitude != 0:
+                    direction_x /= magnitude
+                    direction_y /= magnitude
+
+                # Finalize UGM placement with normalized velocity
+                ugm = UnboundGeneticMaterial(
+                    adjusted_start_x,
+                    adjusted_start_y,
+                    direction_x * 2,  # Scale velocity if needed
+                    direction_y * 2,  # Scale velocity if needed
+                    self.genes
+                )
+                
+                particles.append(ugm)
+                self.placing = False
+                self.start_pos = None
+                self.end_pos = None
+
 class Button:
     def __init__(self, x, y, width, height, color, text, action):
         self.x = x
@@ -629,6 +1056,8 @@ class cellEditUI:
                 self.t = 0
             self.t += 0.3
             self.x = 170 * (1 / (1 + math.exp(-self.t + 5))) - 170
+            if self.t > 10:
+                self.t = 10
             if self.x >= -0.01:
                 self.x = 0
         else:
@@ -636,6 +1065,8 @@ class cellEditUI:
                 self.t = 10
             self.t -= 0.3
             self.x = 170 * (1 / (1 + math.exp(-self.t + 5))) - 171
+            if self.t < 0:
+                self.t = 0
             if self.x <= -170:
                 self.x = -170
         
@@ -649,6 +1080,12 @@ class cellEditUI:
                 write_text(screen, "Selected Cell:", self.x + 85, 70, color=(200, 200, 200))
                 write_text(screen, f"Pos: ({self.selected_cell.x}, {self.selected_cell.y})", self.x + 85, 100, color=(180, 180, 180))
                 write_text(screen, "DNA Blocks:", self.x + 85, 140, color=(200, 200, 200))
+
+                # Add/Remove DNA buttons
+                pygame.draw.rect(screen, (60, 60, 60), (self.x + 130, 130, 20, 20))
+                pygame.draw.rect(screen, (60, 60, 60), (self.x + 20, 130, 20, 20))
+                write_text(screen, "+", self.x + 140, 140, color=(200, 200, 200))
+                write_text(screen, "-", self.x + 30, 140, color=(200, 200, 200))
 
                 # Draw DNA blocks
                 block_height = 40
@@ -741,6 +1178,22 @@ class cellEditUI:
             elif event.button == 5 and self.isMouseOver():  # Mouse wheel down
                 self.scroll_y = min(self.max_scroll, self.scroll_y + 20)
             elif event.button == 1:  # Left click
+                # Check for add/remove DNA buttons
+                if self.selected_cell:
+                    if self.x + 130 <= mouse_x <= self.x + 150 and 130 <= mouse_y <= 150:
+                        genes = ";".join(self.selected_cell.genes).split(";")
+                        genes.extend(["1", "1"])
+                        gene_pairs = [';'.join(genes[i:i+2]) for i in range(0, len(genes), 2)]
+                        self.selected_cell.genes = gene_pairs
+                        return
+                    elif self.x + 20 <= mouse_x <= self.x + 40 and 130 <= mouse_y <= 150:
+                        genes = ";".join(self.selected_cell.genes).split(";")
+                        if len(genes) > 2:  # Ensure at least one pair remains
+                            genes = genes[:-2]
+                            gene_pairs = [';'.join(genes[i:i+2]) for i in range(0, len(genes), 2)]
+                            self.selected_cell.genes = gene_pairs
+                        return
+
                 # Adjust mouse position for offset and zoom
                 adjusted_mouse_x = (mouse_x / zoom) - offset_x
                 adjusted_mouse_y = (mouse_y / zoom) - offset_y
@@ -814,6 +1267,7 @@ FPSs = []
 particles = []
 lasers = []
 editUI = cellEditUI()
+ugmGen = UGMGenerator()
 
 for _ in range(500):
     valid = False
@@ -874,16 +1328,18 @@ while running:
     
     for event in pygame.event.get():
         editUI.handleEvents(event)
+        ugmGen.handleEvents(event)
         if event.type == pygame.QUIT:
             running = False
             pygame.quit()
             sys.exit()
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
-                dragging = True
-                last_mouse_pos = event.pos
-                pan_velocity_x = 0
-                pan_velocity_y = 0
+                if not ugmGen.placing:
+                    dragging = True
+                    last_mouse_pos = event.pos
+                    pan_velocity_x = 0
+                    pan_velocity_y = 0
             elif event.button == 4:  # Mouse wheel up
                 if not (cellEditMode and editUI.isMouseOver()):
                     target_zoom *= 1.1
@@ -905,7 +1361,10 @@ while running:
                 last_mouse_pos = current_pos
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
-                cellEditMode = not cellEditMode
+                if pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                    ugmMode = not ugmMode
+                else:
+                    cellEditMode = not cellEditMode
             elif event.key == pygame.K_ESCAPE:
                 running = False
             elif event.key == pygame.K_r:
@@ -966,8 +1425,9 @@ while running:
         cell.update()
     
     for particle in particles:
-        if type(particle) != Particle: print(f"Non-particle type found. {particle}"); continue
-        particle.update(550, 550)
+        if not isinstance(particle, Particle): print(f"Non-particle type found. {particle}"); continue
+        if particle.update(550, 550):
+            particles.remove(particle)
         particle.draw(screen, offset_x, offset_y, zoom)
     
     for laser in lasers:
@@ -984,7 +1444,7 @@ while running:
         for waste in wastes[:10]:  # Convert up to 10 waste particles at a time
             if random.random() < conversion_chance:  # Weighted chance based on ratio
                 waste.type = "food"
-                waste.color = (255, 0, 0)  # Change color to green for food
+                waste.color = (255, 0, 0)  # Change color to red for food
         
     if foodWasteRatio < 0.3:
         write_text(screen, "Food: LOW", 10, 10, left=True)
@@ -1001,6 +1461,7 @@ while running:
     write_text(screen, "Tick: {:.2f}".format(tick), 10, 50, left=True)
     
     editUI.draw(screen)
+    ugmGen.draw(screen)
     
     write_text(screen, f"FPS: {int(clock.get_fps())}", 400, 10)
     FPSGraph()
